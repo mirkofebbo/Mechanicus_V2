@@ -1,14 +1,26 @@
 from flask import Flask, request, jsonify
 import minimalmodbus
 import serial
-import time
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuration for the RS485 connection
-SERIAL_PORT = '/dev/tty.usbserial-A9P08C0A'
-BAUD_RATE = 115200
-SLAVE_ADDRESS = 0x01
+SERIAL_PORT =       '/dev/tty.usbserial-A10MLR0L'
+BAUD_RATE =         115200
+MASTER_ADDRESS_1 =  0x55
+MASTER_ADDRESS_2 =  0xAA
+SLAVE_ADDRESS =     0x01
+ALL_SLAVE_ADDRESS = 0xFF
+
+# Function codes
+STS_ERROR =         0x0E  
+STS_HOME=           0x1F 
+STS_TEST_LIN =      0x2F  
+STS_TEST_ROT =      0x3F  
+STS_SERVO_INDEX =   0x4F 
+STS_SERVO_LIN_ROT = 0x5F 
 
 # Setup the instrument
 instrument = minimalmodbus.Instrument(SERIAL_PORT, SLAVE_ADDRESS)  # port name, slave address
@@ -16,7 +28,7 @@ instrument.serial.baudrate = BAUD_RATE
 instrument.serial.bytesize = 8
 instrument.serial.parity = serial.PARITY_NONE
 instrument.serial.stopbits = 1
-instrument.serial.timeout = 1    # seconds
+instrument.serial.timeout = 1  # seconds
 
 def calculate_crc(data):
     crc = 0xFFFF
@@ -34,68 +46,54 @@ def send_frame(frame):
     print("Frame to be sent: ", " ".join(f"{byte:02X}" for byte in frame))
     instrument.serial.write(bytearray(frame))
 
-def send_go_home():
-    function_code = 0x1F  # STS_HOME
-    data_length = 0x00  # No additional data needed for this command
-    frame = [0x55, 0xAA, SLAVE_ADDRESS, function_code, data_length]
-    crc = calculate_crc(frame[2:])  # Only pass the relevant data for CRC calculation
-    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
-    frame += crc_bytes
-    send_frame(frame)
-
-def send_control_all_servos_same_angle(angle):
-    function_code = 0x2F  # STS_SERVO_ALL
-    data_length = 0x01
-    message = [angle]
-    frame = [0x55, 0xAA, SLAVE_ADDRESS, function_code, data_length] + message
-    crc = calculate_crc(frame[2:])
-    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
-    frame += crc_bytes
-    send_frame(frame)
-
-def send_control_individual_servo(servo_number, angle):
-    function_code = 0x1F  # STS_SERVO
-    data_length = 2  # 2 bytes: servo number and angle
-    message = [servo_number, angle]
-    frame = [0x55, 0xAA, SLAVE_ADDRESS, function_code, data_length] + message
-    crc = calculate_crc(frame[2:])
-    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
-    frame += crc_bytes
-    send_frame(frame)
-
-def send_control_all_servos_diff_angles(angles):
-    function_code = 0x3F  # STS_SERVO_All_IND
-    data_length = 10  # 10 bytes: one angle for each servo
-    message = angles[:10]
-    frame = [0x55, 0xAA, SLAVE_ADDRESS, function_code, data_length] + message
-    crc = calculate_crc(frame[2:])
-    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
-    frame += crc_bytes
-    send_frame(frame)
-
 @app.route('/go_home', methods=['POST'])
 def go_home():
-    send_go_home()
-    return jsonify({'status': 'success', 'message': 'Go Home command sent'})
+    data_length = 0x00 
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, SLAVE_ADDRESS, STS_HOME, data_length]
+    crc = calculate_crc(frame[2:]) 
+    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
+    frame += crc_bytes
+    send_frame(frame)    
 
-@app.route('/control_all_servos_same_angle', methods=['POST'])
-def control_all_servos_same_angle():
-    angle = request.json.get('angle')
-    send_control_all_servos_same_angle(angle)
-    return jsonify({'status': 'success', 'message': f'Set all servos to {angle} degrees'})
+    return jsonify({"status": "success", "message": "Sent go home command"})
 
-@app.route('/control_individual_servo', methods=['POST'])
-def control_individual_servo():
-    servo_number = request.json.get('servo_number')
-    angle = request.json.get('angle')
-    send_control_individual_servo(servo_number, angle)
-    return jsonify({'status': 'success', 'message': f'Set servo {servo_number} to {angle} degrees'})
+@app.route('/test_actuator', methods=['POST'])
+def test_actuator():
+    data_length = 0x00
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, ALL_SLAVE_ADDRESS, STS_TEST_LIN, data_length] 
+    crc = calculate_crc(frame[2:])
+    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
+    frame += crc_bytes
+    send_frame(frame)
+
+    return jsonify({"status": "success", "message": f"Started Linear Test"})
+
+@app.route('/test_rotation', methods=['POST'])
+def test_rotation():
+    data_length = 0x00
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, SLAVE_ADDRESS, STS_TEST_ROT, data_length] 
+    crc = calculate_crc(frame[2:])
+    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
+    frame += crc_bytes
+    send_frame(frame)
+
+    return jsonify({"status": "success", "message": f"Searted Rotation Test"})
 
 @app.route('/control_all_servos_diff_angles', methods=['POST'])
 def control_all_servos_diff_angles():
-    angles = request.json.get('angles')
-    send_control_all_servos_diff_angles(angles)
-    return jsonify({'status': 'success', 'message': 'Set all servos to different angles'})
+    data = request.json
+    angles = data.get('angles')
+    if len(angles) != 3:
+        return jsonify({"status": "error", "message": "Angles array must contain exactly 10 elements"}), 400
+    data_length = 3 
+    message =  [eval(i) for i in angles]
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, SLAVE_ADDRESS, STS_SERVO_LIN_ROT, data_length] + message
+    crc = calculate_crc(frame[2:])
+    crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
+    frame += crc_bytes
+    send_frame(frame)
+
+    return jsonify({"status": "success", "message": "Sent control all servos to different angles"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8080)

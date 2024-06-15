@@ -1,0 +1,11 @@
+@font-face {
+    font-family: 'CustomFont';
+    src: url('./ErbosDraco.ttf') format('ttf'),
+         url('./ErbosDraco.ttf') format('ttf');
+    font-weight: normal;
+    font-style: normal;
+  }
+  
+  .custom-font {
+    font-family: 'CustomFont', sans-serif;
+  }

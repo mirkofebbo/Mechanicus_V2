@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import minimalmodbus
 import serial
+import json
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -49,7 +50,7 @@ def send_frame(frame):
 @app.route('/go_home', methods=['POST'])
 def go_home():
     data_length = 0x00 
-    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, SLAVE_ADDRESS, STS_HOME, data_length]
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, ALL_SLAVE_ADDRESS, STS_HOME, data_length]
     crc = calculate_crc(frame[2:]) 
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes
@@ -71,7 +72,7 @@ def test_actuator():
 @app.route('/test_rotation', methods=['POST'])
 def test_rotation():
     data_length = 0x00
-    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, SLAVE_ADDRESS, STS_TEST_ROT, data_length] 
+    frame = [MASTER_ADDRESS_1, MASTER_ADDRESS_2, ALL_SLAVE_ADDRESS, STS_TEST_ROT, data_length] 
     crc = calculate_crc(frame[2:])
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes

@@ -2,72 +2,148 @@ import React, { useState, useEffect } from "react";
 import { Container, Typography, Box } from "@mui/material";
 import { styled } from '@mui/system';
 import stockData from '../data/all_stocks.json';
-import '../font/font.css'; 
+import axios from 'axios';
 
 // Styled components
 const TickerWrapper = styled('div')({
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  width: '100%',
-  position: 'relative',
-  padding: '10px 0',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    width: '100%',
+    position: 'relative',
+    padding: '10px 0',
 });
 
 const Ticker = styled('div')({
-  display: 'inline-block',
-  animation: 'ticker 120s linear infinite', // Slower animation speed
-  '@keyframes ticker': {
-    '0%': { transform: 'translateX(100%)' },
-    '100%': { transform: 'translateX(-100%)' },
-  },
+    display: 'inline-block',
+    animation: 'ticker linear infinite',
+    '@keyframes ticker': {
+        '0%': { transform: 'translateX(0)' },
+        '100%': { transform: 'translateX(-50%)' },
+    },
+    fontSize: '1.2rem',
+    whiteSpace: 'nowrap',
+});
+
+const TickerItem = styled(Box)({
+    display: 'inline-block',
+    marginRight: '2rem',
 });
 
 export default function Test() {
-  const [date, setDate] = useState('');
-  const [tickerItems, setTickerItems] = useState([]);
+    const [dateIndex, setDateIndex] = useState(0);
+    const [date, setDate] = useState('');
+    const [tickerItems, setTickerItems] = useState([]);
+    const [previousTickerItems, setPreviousTickerItems] = useState([]);
 
-  useEffect(() => {
-    const dates = Object.keys(stockData);
-    if (dates.length > 0) {
-      const latestDate = dates[0];
-      setDate(latestDate);
+    useEffect(() => {
+        const dates = Object.keys(stockData).reverse();
+        if (dates.length > 0) {
+            const updateStockData = () => {
+                const currentIndex = dateIndex % dates.length;
+                const currentDate = dates[currentIndex];
+                setDate(currentDate);
 
-      const items = [];
-      for (const symbol in stockData[latestDate]) {
-        const { close_price, volume } = stockData[latestDate][symbol];
-        items.push({ symbol, close_price, volume });
-      }
-      setTickerItems(items);
-    }
-  }, []);
+                const items = Object.entries(stockData[currentDate]).map(([symbol, { close_price, volume }]) => ({
+                    symbol, close_price, volume
+                }));
 
-  return (
-    <Container maxWidth="lg">
-      <Box sx={{ textAlign: 'center', my: 4 }} className="custom-font">
-        <Typography variant="h4" gutterBottom>
-          Real-Time Market Data
-        </Typography>
-        <Typography variant="h5" gutterBottom>
-          Date: {date}
-        </Typography>
-      </Box>
-      <TickerWrapper>
-        <Ticker>
-          {tickerItems.map((item, index) => (
-            <Box key={index} sx={{ display: 'inline-block', mx: 2 }} className="custom-font">
-              <Typography variant="body1" display="inline" sx={{ fontWeight: 'bold' }}>
-                {item.symbol}: 
-              </Typography>
-              <Typography variant="body1" display="inline" sx={{ color: 'green', mx: 1 }}>
-                ${item.close_price}
-              </Typography>
-              <Typography variant="body2" display="inline" sx={{ color: 'gray' }}>
-                Vol: {item.volume}
-              </Typography>
+                setPreviousTickerItems(tickerItems);
+                setTickerItems(items);
+            };
+
+            updateStockData(); // Initial call to set the first date's data
+
+            const interval = setInterval(() => {
+                setDateIndex(prevIndex => prevIndex + 1); // Increment the dateIndex
+            }, 10000); // Update every 30 seconds
+
+            return () => clearInterval(interval); // Cleanup interval on component unmount
+        }
+    }, []);
+
+    useEffect(() => {
+        const dates = Object.keys(stockData).reverse();
+        if (dates.length > 0) {
+            const currentIndex = dateIndex % dates.length;
+            const currentDate = dates[currentIndex];
+            setDate(currentDate);
+
+            const items = Object.entries(stockData[currentDate]).map(([symbol, { close_price, volume }]) => ({
+                symbol, close_price, volume
+            }));
+
+            setPreviousTickerItems(tickerItems);
+            setTickerItems(items);
+
+            // Send stock data updates to the server
+            const stockUpdates = calculateChange(items, previousTickerItems).flatMap(item => [
+                Math.round(item.priceChange),
+                Math.round(item.volumeChange)
+              ]);
+
+            axios.post('http://localhost:8080/update_stock_data', stockUpdates)
+                .then(response => {
+                    console.log('Stock data update sent:', response.data);
+                })
+                .catch(error => {
+                    console.error('Error sending stock data update:', error);
+                });
+        }
+    }, [dateIndex]);
+
+    const calculateChange = (current, previous) => {
+        if (!previous || !current) return [];
+        const currentMap = new Map(current.map(item => [item.symbol, item]));
+        const previousMap = new Map(previous.map(item => [item.symbol, item]));
+
+        return current.map(item => {
+            const prevItem = previousMap.get(item.symbol);
+            const priceChange = prevItem ? ((item.close_price - prevItem.close_price) / prevItem.close_price) * 100 : 0;
+            const volumeChange = prevItem ? ((item.volume - prevItem.volume) / prevItem.volume) * 100 : 0;
+            return { ...item, priceChange, volumeChange };
+        });
+    };
+
+    const tickerSections = calculateChange(tickerItems, previousTickerItems);
+    const splitItems = (items, numSplits) => {
+        const itemsPerSplit = Math.ceil(items.length / numSplits);
+        return Array.from({ length: numSplits }, (_, i) =>
+            items.slice(i * itemsPerSplit, (i + 1) * itemsPerSplit)
+        );
+    };
+
+    const tickerSplitSections = splitItems(tickerSections, 3);
+    const animationDuration = `${tickerItems.length * 2}s`; // Adjust this value to match the scrolling speed
+
+    return (
+        <Container maxWidth={false} disableGutters>
+            <Box sx={{ textAlign: 'center', my: 4 }} className="custom-font">
+                <Typography variant="h4" gutterBottom>
+                    Real-Time Market Data
+                </Typography>
+                <Typography variant="h5" gutterBottom>
+                    Date: {date}
+                </Typography>
             </Box>
-          ))}
-        </Ticker>
-      </TickerWrapper>
-    </Container>
-  );
+            {tickerSplitSections.map((items, idx) => (
+                <TickerWrapper key={idx}>
+                    <Ticker style={{ animationDuration }}>
+                        {items.concat(items).map((item, index) => ( // Duplicate items for seamless scrolling
+                            <TickerItem key={index}>
+                                <Typography variant="h1" display="inline" sx={{ fontWeight: 'bold' }}>
+                                    {item.symbol}:
+                                </Typography>
+                                <Typography variant="h1" display="inline" sx={{ color: item.priceChange >= 0 ? 'green' : 'red', mx: 1 }}>
+                                    ${item.close_price} ({item.priceChange >= 0 ? '+' : ''}{item.priceChange.toFixed(2)}%)
+                                </Typography>
+                                <Typography variant="h1" display="inline" sx={{ color: item.volumeChange >= 0 ? 'green' : 'red' }}>
+                                    Vol: {item.volume} ({item.volumeChange >= 0 ? '+' : ''}{item.volumeChange.toFixed(2)}%)
+                                </Typography>
+                            </TickerItem>
+                        ))}
+                    </Ticker>
+                </TickerWrapper>
+            ))}
+        </Container>
+    );
 }

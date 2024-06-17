@@ -9,8 +9,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuration for the RS485 connection
-# SERIAL_PORT = '/dev/tty.usbserial-A10MLR0L'
-SERIAL_PORT = '/dev/ttyAMA10'
+SERIAL_PORT = '/dev/tty.usbserial-A10MLR0L'
 BAUD_RATE = 115200
 MASTER_ADDRESS_1 = 0x55
 MASTER_ADDRESS_2 = 0xAA
@@ -20,7 +19,7 @@ ALL_SLAVE_ADDRESS = 0xFF
 # Function codes
 STS_ERROR = 0x0E
 STS_HOME = 0x1F
-STS_TEST_LIN = 0x2Fcd 
+STS_TEST_LIN = 0x2F
 STS_TEST_ROT = 0x3F
 STS_SERVO_INDEX = 0x4F
 STS_SERVO_LIN_ROT = 0x5F
@@ -84,7 +83,7 @@ def send_frame(slave_address, frame):
     try:
         instrument.address = slave_address
         print(f"Frame to be sent to {slave_address}: ", " ".join(f"{byte:02X}" for byte in frame))
-        instrument.serial.write(bytearray(frame))
+        instrument.serial.write(bytearray([b & 0xFF for b in frame]))
         return True, "Frame sent successfully"
     except SerialException as e:
         print(f"Error sending frame: {e}")

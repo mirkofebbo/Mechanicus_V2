@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
 import minimalmodbus
 import serial
+from serial import SerialException
 from flask_cors import CORS
+import time
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -24,17 +26,30 @@ STS_SERVO_LIN_ROT = 0x5F
 STS_STOCK_DATA = 0x6F
 
 # Servo speed constants
-MIN_SERVO = 00
+MIN_SERVO = 0
 STOP_SERVO = 90
-MAX_SERVO = 10
+MAX_SERVO = 180
 
 # Setup the instrument
-instrument = minimalmodbus.Instrument(SERIAL_PORT, ALL_SLAVE_ADDRESS)  # port name, slave address
-instrument.serial.baudrate = BAUD_RATE
-instrument.serial.bytesize = 8
-instrument.serial.parity = serial.PARITY_NONE
-instrument.serial.stopbits = 1
-instrument.serial.timeout = 1  # seconds
+instrument = None
+
+def setup_instrument():
+    global instrument
+    try:
+        instrument = minimalmodbus.Instrument(SERIAL_PORT, ALL_SLAVE_ADDRESS)  # port name, slave address
+        instrument.serial.baudrate = BAUD_RATE
+        instrument.serial.bytesize = 8
+        instrument.serial.parity = serial.PARITY_NONE
+        instrument.serial.stopbits = 1
+        instrument.serial.timeout = 1  # seconds
+        print("Instrument connected")
+        return True
+    except SerialException as e:
+        print(f"Error setting up instrument: {e}")
+        return False
+
+# Try to set up the instrument initially
+setup_instrument()
 
 def calculate_crc(data):
     crc = 0xFFFF
@@ -48,21 +63,35 @@ def calculate_crc(data):
                 crc >>= 1
     return crc
 
-
 def map_value_to_servo_speed(value):
-    # if value < 0:
-    #     mapped_value = int((value + 100) / 100 * 90) 
-    # else:
-    mapped_value = int(value / 100 * 90 + 90)  
+    if value < -100:
+        value = -100
+    elif value > 100:
+        value = 100
+
+    if value < 0:
+        mapped_value = int((value + 100) / 100 * 90)  # Map to 0-90
+    else:
+        mapped_value = int(value / 100 * 90 + 90)  # Map to 90-180
     
-    # Clamp the value to be within 0-180
-    # return 5
-    return max(MIN_SERVO, min(MAX_SERVO, value))
+    return max(MIN_SERVO, min(MAX_SERVO, mapped_value))
 
 def send_frame(slave_address, frame):
-    instrument.address = slave_address
-    print(f"Frame to be sent to {slave_address}: ", " ".join(f"{byte:02X}" for byte in frame))
-    instrument.serial.write(bytearray(frame))
+    if not instrument:
+        print("Instrument not connected")
+        return False, "USB device not connected"
+    try:
+        instrument.address = slave_address
+        print(f"Frame to be sent to {slave_address}: ", " ".join(f"{byte:02X}" for byte in frame))
+        instrument.serial.write(bytearray(frame))
+        return True, "Frame sent successfully"
+    except SerialException as e:
+        print(f"Error sending frame: {e}")
+        if setup_instrument():
+            print("Reconnected to USB device")
+            return False, "Reconnected to USB device"
+        else:
+            return False, "USB device not connected"
 
 @app.route('/go_home', methods=['POST'])
 def go_home():
@@ -71,8 +100,11 @@ def go_home():
     crc = calculate_crc(frame[2:])
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes
-    send_frame(ALL_SLAVE_ADDRESS, frame)
-    return jsonify({"status": "success", "message": "Sent go home command"})
+    success, message = send_frame(ALL_SLAVE_ADDRESS, frame)
+    if success:
+        return jsonify({"status": "success", "message": "Sent go home command"})
+    else:
+        return jsonify({"status": "error", "message": message}), 500
 
 @app.route('/test_actuator', methods=['POST'])
 def test_actuator():
@@ -81,8 +113,11 @@ def test_actuator():
     crc = calculate_crc(frame[2:])
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes
-    send_frame(ALL_SLAVE_ADDRESS, frame)
-    return jsonify({"status": "success", "message": "Started Linear Test"})
+    success, message = send_frame(ALL_SLAVE_ADDRESS, frame)
+    if success:
+        return jsonify({"status": "success", "message": "Started Linear Test"})
+    else:
+        return jsonify({"status": "error", "message": message}), 500
 
 @app.route('/test_rotation', methods=['POST'])
 def test_rotation():
@@ -91,8 +126,11 @@ def test_rotation():
     crc = calculate_crc(frame[2:])
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes
-    send_frame(ALL_SLAVE_ADDRESS, frame)
-    return jsonify({"status": "success", "message": "Started Rotation Test"})
+    success, message = send_frame(ALL_SLAVE_ADDRESS, frame)
+    if success:
+        return jsonify({"status": "success", "message": "Started Rotation Test"})
+    else:
+        return jsonify({"status": "error", "message": message}), 500
 
 @app.route('/control_all_servos_diff_angles', methods=['POST'])
 def control_all_servos_diff_angles():
@@ -107,7 +145,9 @@ def control_all_servos_diff_angles():
     crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
     frame += crc_bytes
     for slave_address in SLAVE_ADDRESSES:
-        send_frame(slave_address, frame)
+        success, message = send_frame(slave_address, frame)
+        if not success:
+            return jsonify({"status": "error", "message": message}), 500
     return jsonify({"status": "success", "message": "Sent control all servos to different angles"})
 
 @app.route('/update_stock_data', methods=['POST'])
@@ -130,7 +170,9 @@ def update_stock_data():
         crc = calculate_crc(frame[2:])
         crc_bytes = [crc & 0xFF, (crc >> 8) & 0xFF]
         frame += crc_bytes
-        send_frame(slave_address, frame)
+        success, message = send_frame(slave_address, frame)
+        if not success:
+            return jsonify({"status": "error", "message": message}), 500
     
     return jsonify({"status": "success", "message": "Stock data update received and sent to Arduinos"})
 

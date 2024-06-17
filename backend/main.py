@@ -10,7 +10,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuration for the RS485 connection
 # SERIAL_PORT = '/dev/tty.usbserial-A10MLR0L'
-SERIAL_PORT = '/sys/class/tty/ttyAMA10/device'
+SERIAL_PORT = '/dev/ttyAMA10'
 BAUD_RATE = 115200
 MASTER_ADDRESS_1 = 0x55
 MASTER_ADDRESS_2 = 0xAA
@@ -20,7 +20,7 @@ ALL_SLAVE_ADDRESS = 0xFF
 # Function codes
 STS_ERROR = 0x0E
 STS_HOME = 0x1F
-STS_TEST_LIN = 0x2F
+STS_TEST_LIN = 0x2Fcd 
 STS_TEST_ROT = 0x3F
 STS_SERVO_INDEX = 0x4F
 STS_SERVO_LIN_ROT = 0x5F

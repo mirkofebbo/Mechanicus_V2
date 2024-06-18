@@ -10,6 +10,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configuration for the RS485 connection
 SERIAL_PORT = '/dev/tty.usbserial-A10MLR0L'
+# SERIAL_PORT = '/dev/ttyAMA10'
+
 BAUD_RATE = 115200
 MASTER_ADDRESS_1 = 0x55
 MASTER_ADDRESS_2 = 0xAA

@@ -29,6 +29,27 @@ const TickerItem = styled(Box)({
     marginRight: '2rem',
 });
 
+const operationHours = [
+    { day: 1, start: "19:30", end: "20:30" },
+    { day: 2, start: "09:00", end: "17:00" },
+    { day: 3, start: "09:00", end: "17:00" },
+    { day: 4, start: "09:00", end: "17:00" },
+    { day: 5, start: "09:00", end: "17:00" },
+    // Add additional days and hours as needed
+];
+
+function isWithinOperationHours() {
+    const now = new Date();
+    const day = now.getDay();
+    const time = now.toTimeString().split(' ')[0];
+
+    const operationDay = operationHours.find(op => op.day === day);
+    if (operationDay) {
+        return time >= operationDay.start && time <= operationDay.end;
+    }
+    return false;
+}
+
 export default function Test() {
     const [dateIndex, setDateIndex] = useState(0);
     const [date, setDate] = useState('');
@@ -55,7 +76,7 @@ export default function Test() {
 
             const interval = setInterval(() => {
                 setDateIndex(prevIndex => prevIndex + 1); // Increment the dateIndex
-            }, 10000); // Update every 30 seconds
+            }, 10000); // Update every 10 seconds
 
             return () => clearInterval(interval); // Cleanup interval on component unmount
         }
@@ -75,19 +96,28 @@ export default function Test() {
             setPreviousTickerItems(tickerItems);
             setTickerItems(items);
 
-            // Send stock data updates to the server
             const stockUpdates = calculateChange(items, previousTickerItems).flatMap(item => [
                 Math.round(item.priceChange),
                 Math.round(item.volumeChange)
-              ]);
+            ]);
 
-            axios.post('http://localhost:8080/update_stock_data', stockUpdates)
-                .then(response => {
-                    console.log('Stock data update sent:', response.data);
-                })
-                .catch(error => {
-                    console.error('Error sending stock data update:', error);
-                });
+            if (isWithinOperationHours()) {
+                axios.post('http://localhost:8080/update_stock_data', stockUpdates)
+                    .then(response => {
+                        console.log('Stock data update sent:', response.data);
+                    })
+                    .catch(error => {
+                        console.error('Error sending stock data update:', error);
+                    });
+            } else {
+                axios.post('http://localhost:8080/go_home')
+                    .then(response => {
+                        console.log('Go home command sent:', response.data);
+                    })
+                    .catch(error => {
+                        console.error('Error sending go home command:', error);
+                    });
+            }
         }
     }, [dateIndex]);
 

@@ -29,32 +29,19 @@ const TickerItem = styled(Box)({
     marginRight: '2rem',
 });
 
-const operationHours = [
-    { day: 1, start: "19:30", end: "20:30" },
-    { day: 2, start: "09:00", end: "17:00" },
-    { day: 3, start: "09:00", end: "17:00" },
-    { day: 4, start: "09:00", end: "17:00" },
-    { day: 5, start: "09:00", end: "17:00" },
-    // Add additional days and hours as needed
-];
-
-function isWithinOperationHours() {
-    const now = new Date();
-    const day = now.getDay();
-    const time = now.toTimeString().split(' ')[0];
-
-    const operationDay = operationHours.find(op => op.day === day);
-    if (operationDay) {
-        return time >= operationDay.start && time <= operationDay.end;
-    }
-    return false;
-}
-
 export default function Test() {
     const [dateIndex, setDateIndex] = useState(0);
     const [date, setDate] = useState('');
     const [tickerItems, setTickerItems] = useState([]);
     const [previousTickerItems, setPreviousTickerItems] = useState([]);
+
+    const operatingTimes = [
+        { day: 1, start: '09:30', end: '16:00' }, // Monday
+        { day: 2, start: '09:30', end: '16:00' }, // Tuesday
+        { day: 3, start: '09:30', end: '16:00' }, // Wednesday
+        { day: 4, start: '09:30', end: '16:00' }, // Thursday
+        { day: 5, start: '09:30', end: '16:00' }, // Friday
+    ];
 
     useEffect(() => {
         const dates = Object.keys(stockData).reverse();
@@ -70,6 +57,36 @@ export default function Test() {
 
                 setPreviousTickerItems(tickerItems);
                 setTickerItems(items);
+
+                const now = new Date();
+                const currentDay = now.getDay();
+                const currentTime = now.toTimeString().slice(0, 5);
+                const isOperating = operatingTimes.some(time => 
+                    time.day === currentDay && currentTime >= time.start && currentTime <= time.end
+                );
+
+                if (isOperating) {
+                    const stockUpdates = calculateChange(items, previousTickerItems).flatMap(item => [
+                        Math.round(item.priceChange),
+                        Math.round(item.volumeChange)
+                    ]);
+
+                    axios.post('http://localhost:8080/update_stock_data', stockUpdates)
+                        .then(response => {
+                            console.log('Stock data update sent:', response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error sending stock data update:', error);
+                        });
+                } else {
+                    axios.post('http://localhost:8080/go_home')
+                        .then(response => {
+                            console.log('Go home command sent:', response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error sending go home command:', error);
+                        });
+                }
             };
 
             updateStockData(); // Initial call to set the first date's data
@@ -79,45 +96,6 @@ export default function Test() {
             }, 10000); // Update every 10 seconds
 
             return () => clearInterval(interval); // Cleanup interval on component unmount
-        }
-    }, []);
-
-    useEffect(() => {
-        const dates = Object.keys(stockData).reverse();
-        if (dates.length > 0) {
-            const currentIndex = dateIndex % dates.length;
-            const currentDate = dates[currentIndex];
-            setDate(currentDate);
-
-            const items = Object.entries(stockData[currentDate]).map(([symbol, { close_price, volume }]) => ({
-                symbol, close_price, volume
-            }));
-
-            setPreviousTickerItems(tickerItems);
-            setTickerItems(items);
-
-            const stockUpdates = calculateChange(items, previousTickerItems).flatMap(item => [
-                Math.round(item.priceChange),
-                Math.round(item.volumeChange)
-            ]);
-
-            if (isWithinOperationHours()) {
-                axios.post('http://localhost:8080/update_stock_data', stockUpdates)
-                    .then(response => {
-                        console.log('Stock data update sent:', response.data);
-                    })
-                    .catch(error => {
-                        console.error('Error sending stock data update:', error);
-                    });
-            } else {
-                axios.post('http://localhost:8080/go_home')
-                    .then(response => {
-                        console.log('Go home command sent:', response.data);
-                    })
-                    .catch(error => {
-                        console.error('Error sending go home command:', error);
-                    });
-            }
         }
     }, [dateIndex]);
 
